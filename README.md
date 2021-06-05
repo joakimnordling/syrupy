@@ -161,13 +161,13 @@ def test_bar(snapshot):
     }))
 ```
 
-```ambr
+```py
 # name: test_bar
-  <class 'dict'> {
-    'date_created': <class 'datetime'>,
+  dict({
+    'date_created': datetime,
     'value': 'Some computed value!!',
-  }
----
+  })
+# ---
 ```
 
 #### `exclude`
@@ -203,15 +203,15 @@ def test_bar(snapshot):
     assert actual == snapshot(exclude=props("id", "1"))
 ```
 
-```ambr
+```py
 # name: test_bar
-  <class 'dict'> {
-    'list': <class 'list'> [
+  dict({
+    'list': list([
       1,
       3,
-    ],
-  }
----
+    ]),
+  })
+# ---
 ```
 
 ###### `paths(path_string, *path_strings)`
@@ -231,15 +231,15 @@ def test_bar(snapshot):
     assert actual == snapshot(exclude=paths("date", "list.1"))
 ```
 
-```ambr
+```py
 # name: test_bar
-  <class 'dict'> {
-    'list': <class 'list'> [
+  dict({
+    'list': list([
       1,
       3,
-    ],
-  }
----
+    ]),
+  })
+# ---
 ```
 
 #### `extension_class`

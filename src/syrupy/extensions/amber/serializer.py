@@ -59,7 +59,7 @@ class DataSerializer:
     _indent: str = "  "
     _max_depth: int = 99
     _marker_comment: str = "# "
-    _marker_divider: str = "---"
+    _marker_divider: str = f"{_marker_comment}---"
     _marker_name: str = f"{_marker_comment}name:"
     _marker_crn: str = "\r\n"
 
@@ -187,8 +187,8 @@ class DataSerializer:
                 for line in str(data).splitlines(keepends=True)
             ),
             depth=depth,
-            open_tag="'",
-            close_tag="'",
+            open_tag="'''",
+            close_tag="'''",
             include_type=False,
             ends="",
         )
@@ -197,21 +197,16 @@ class DataSerializer:
     def serialize_iterable(
         cls, data: Iterable["SerializableData"], **kwargs: Any
     ) -> str:
-        open_paren, close_paren = next(
-            parens
-            for iter_type, parens in {
-                GeneratorType: ("(", ")"),
-                list: ("[", "]"),
-                tuple: ("(", ")"),
-            }.items()
-            if isinstance(data, iter_type)
-        )
+        open_paren, close_paren = (None, None)
+        if isinstance(data, list):
+            open_paren, close_paren = ("[", "]")
+
         values = list(data)
         return cls.__serialize_iterable(
             data=data,
             resolve_entries=(range(len(values)), item_getter, None),
-            open_tag=open_paren,
-            close_tag=close_paren,
+            open_paren=open_paren,
+            close_paren=close_paren,
             **kwargs,
         )
 
@@ -220,8 +215,8 @@ class DataSerializer:
         return cls.__serialize_iterable(
             data=data,
             resolve_entries=(cls.sort(data), lambda _, p: p, None),
-            open_tag="{",
-            close_tag="}",
+            open_paren="{",
+            close_paren="}",
             **kwargs,
         )
 
@@ -230,8 +225,6 @@ class DataSerializer:
         return cls.__serialize_iterable(
             data=data,
             resolve_entries=(cls.sort(data._fields), attr_getter, None),
-            open_tag="(",
-            close_tag=")",
             separator="=",
             **kwargs,
         )
@@ -243,8 +236,8 @@ class DataSerializer:
         return cls.__serialize_iterable(
             data=data,
             resolve_entries=(cls.sort(data.keys()), item_getter, None),
-            open_tag="{",
-            close_tag="}",
+            open_paren="{",
+            close_paren="}",
             separator=": ",
             serialize_key=True,
             **kwargs,
@@ -263,8 +256,6 @@ class DataSerializer:
                 lambda v: not callable(v),
             ),
             depth=depth,
-            open_tag="{",
-            close_tag="}",
             separator="=",
             **kwargs,
         )
@@ -282,7 +273,7 @@ class DataSerializer:
 
     @classmethod
     def object_type(cls, data: "SerializableData") -> str:
-        return f"<class '{data.__class__.__name__}'>"
+        return f"{data.__class__.__name__}"
 
     @classmethod
     def __is_namedtuple(cls, obj: Any) -> bool:
@@ -305,8 +296,8 @@ class DataSerializer:
         *,
         data: "SerializableData",
         resolve_entries: "IterableEntries",
-        open_tag: str,
-        close_tag: str,
+        open_paren: Optional[str] = None,
+        close_paren: Optional[str] = None,
         depth: int = 0,
         exclude: Optional["PropertyFilter"] = None,
         path: "PropertyPath" = (),
@@ -347,8 +338,8 @@ class DataSerializer:
             data=data,
             lines=(f"{key_str(key)}{value_str(key, value)}," for key, value in entries),
             depth=depth,
-            open_tag=open_tag,
-            close_tag=close_tag,
+            open_tag=f"({open_paren or ''}",
+            close_tag=f"{close_paren or ''})",
         )
 
     @classmethod
@@ -365,7 +356,7 @@ class DataSerializer:
     ) -> str:
         lines = ends.join(lines)
         lines_end = "\n" if lines else ""
-        maybe_obj_type = f"{cls.object_type(data)} " if include_type else ""
+        maybe_obj_type = f"{cls.object_type(data)}" if include_type else ""
         formatted_open_tag = cls.with_indent(f"{maybe_obj_type}{open_tag}", depth)
         formatted_close_tag = cls.with_indent(close_tag, depth)
         return f"{formatted_open_tag}\n{lines}{lines_end}{formatted_close_tag}"
