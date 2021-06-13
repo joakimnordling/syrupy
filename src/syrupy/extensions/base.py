@@ -18,6 +18,7 @@ from typing import (
 )
 
 from syrupy.constants import (
+    DISABLE_COLOR_ENV_VAR,
     SNAPSHOT_DIRNAME,
     SYMBOL_CARRIAGE,
     SYMBOL_ELLIPSIS,
@@ -39,7 +40,11 @@ from syrupy.terminal import (
     snapshot_diff_style,
     snapshot_style,
 )
-from syrupy.utils import walk_snapshot_dir
+from syrupy.utils import (
+    env_context,
+    obj_attrs,
+    walk_snapshot_dir,
+)
 
 if TYPE_CHECKING:
     from syrupy.location import PyTestLocation
@@ -48,6 +53,7 @@ if TYPE_CHECKING:
         PropertyMatcher,
         SerializableData,
         SerializedData,
+        SnapshotId,
     )
 
 
@@ -73,12 +79,12 @@ class SnapshotFossilizer(ABC):
     def test_location(self) -> "PyTestLocation":
         raise NotImplementedError
 
-    def get_snapshot_name(self, *, index: int = 0) -> str:
+    def get_snapshot_name(self, *, index: "SnapshotId" = 0) -> str:
         """Get the snapshot name for the assertion index in a test location"""
-        index_suffix = f".{index}" if index > 0 else ""
+        index_suffix = f".{repr(index)}" if index else ""
         return f"{self.test_location.snapshot_name}{index_suffix}"
 
-    def get_location(self, *, index: int) -> str:
+    def get_location(self, *, index: "SnapshotId") -> str:
         """Returns full location where snapshot data is stored."""
         basename = self._get_file_basename(index=index)
         fileext = f".{self._file_extension}" if self._file_extension else ""
@@ -105,7 +111,7 @@ class SnapshotFossilizer(ABC):
 
         return discovered
 
-    def read_snapshot(self, *, index: int) -> "SerializedData":
+    def read_snapshot(self, *, index: "SnapshotId") -> "SerializedData":
         """
         Utility method for reading the contents of a snapshot assertion.
         Will call `_pre_read`, then perform `read` and finally `post_read`,
@@ -127,7 +133,7 @@ class SnapshotFossilizer(ABC):
         finally:
             self._post_read(index=index)
 
-    def write_snapshot(self, *, data: "SerializedData", index: int) -> None:
+    def write_snapshot(self, *, data: "SerializedData", index: "SnapshotId") -> None:
         """
         Utility method for writing the contents of a snapshot assertion.
         Will call `_pre_write`, then perform `write` and finally `_post_write`.
@@ -173,16 +179,16 @@ class SnapshotFossilizer(ABC):
         """
         raise NotImplementedError
 
-    def _pre_read(self, *, index: int = 0) -> None:
+    def _pre_read(self, *, index: "SnapshotId" = 0) -> None:
         pass
 
-    def _post_read(self, *, index: int = 0) -> None:
+    def _post_read(self, *, index: "SnapshotId" = 0) -> None:
         pass
 
-    def _pre_write(self, *, data: "SerializedData", index: int = 0) -> None:
+    def _pre_write(self, *, data: "SerializedData", index: "SnapshotId" = 0) -> None:
         self.__ensure_snapshot_dir(index=index)
 
-    def _post_write(self, *, data: "SerializedData", index: int = 0) -> None:
+    def _post_write(self, *, data: "SerializedData", index: "SnapshotId" = 0) -> None:
         pass
 
     @abstractmethod
@@ -218,11 +224,11 @@ class SnapshotFossilizer(ABC):
     def _file_extension(self) -> str:
         raise NotImplementedError
 
-    def _get_file_basename(self, *, index: int) -> str:
+    def _get_file_basename(self, *, index: "SnapshotId") -> str:
         """Returns file basename without extension. Used to create full filepath."""
         return self.test_location.filename
 
-    def __ensure_snapshot_dir(self, *, index: int) -> None:
+    def __ensure_snapshot_dir(self, *, index: "SnapshotId") -> None:
         """
         Ensures the folder path for the snapshot file exists.
         """
@@ -233,6 +239,16 @@ class SnapshotFossilizer(ABC):
 
 
 class SnapshotReporter(ABC):
+    _context_line_count = 1
+
+    def diff_snapshots(
+        self, serialized_data: "SerializedData", snapshot_data: "SerializedData"
+    ) -> "SerializedData":
+        env = {DISABLE_COLOR_ENV_VAR: "true"}
+        attrs = {"_context_line_count": 0}
+        with env_context(**env), obj_attrs(self, attrs):
+            return "\n".join(self.diff_lines(serialized_data, snapshot_data))
+
     def diff_lines(
         self, serialized_data: "SerializedData", snapshot_data: "SerializedData"
     ) -> Iterator[str]:
@@ -242,10 +258,6 @@ class SnapshotReporter(ABC):
     @property
     def _ends(self) -> Dict[str, str]:
         return {"\n": self._marker_new_line, "\r": self._marker_carriage}
-
-    @property
-    def _context_line_count(self) -> int:
-        return 1
 
     @property
     def _context_line_max(self) -> int:

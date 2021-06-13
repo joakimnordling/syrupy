@@ -23,6 +23,7 @@ if TYPE_CHECKING:
         PropertyMatcher,
         SerializableData,
         SerializedData,
+        SnapshotId,
     )
 
 
@@ -87,6 +88,10 @@ class SnapshotAssertion:
         return int(self._executions)
 
     @property
+    def snapshot_id(self) -> "SnapshotId":
+        return getattr(self, "_snapshot_id", None) or self.num_executions
+
+    @property
     def executions(self) -> Dict[int, AssertionResult]:
         return self._execution_results
 
@@ -146,8 +151,10 @@ class SnapshotAssertion:
     def __call__(
         self,
         *,
+        diff: Optional["SnapshotId"] = None,
         exclude: Optional["PropertyFilter"] = None,
         extension_class: Optional[Type["AbstractSyrupyExtension"]] = None,
+        index: Optional["SnapshotId"] = None,
         matcher: Optional["PropertyMatcher"] = None,
     ) -> "SnapshotAssertion":
         """
@@ -159,6 +166,10 @@ class SnapshotAssertion:
             self.__with_prop("_extension", self.__init_extension(extension_class))
         if matcher:
             self.__with_prop("_matcher", matcher)
+        if index is not None:
+            self.__with_prop("_snapshot_id", index)
+        if diff is not None:
+            self.__with_prop("_snapshot_id_diff", diff)
         return self
 
     def __dir__(self) -> List[str]:
@@ -168,21 +179,30 @@ class SnapshotAssertion:
         return self._assert(other)
 
     def _assert(self, data: "SerializableData") -> bool:
-        snapshot_location = self.extension.get_location(index=self.num_executions)
-        snapshot_name = self.extension.get_snapshot_name(index=self.num_executions)
+        snapshot_location = self.extension.get_location(index=self.snapshot_id)
+        snapshot_name = self.extension.get_snapshot_name(index=self.snapshot_id)
         snapshot_data: Optional["SerializedData"] = None
         serialized_data: Optional["SerializedData"] = None
         matches = False
         assertion_success = False
         assertion_exception = None
         try:
-            snapshot_data = self._recall_data(index=self.num_executions)
+            snapshot_data = self._recall_data(index=self.snapshot_id)
             serialized_data = self._serialize(data)
+            snapshot_id_diff = getattr(self, "_snapshot_id_diff", None)
+            if snapshot_id_diff is not None:
+                snapshot_data_diff = self._recall_data(index=snapshot_id_diff)
+                if snapshot_data_diff is None:
+                    raise SnapshotDoesNotExist()
+                serialized_data = self.extension.diff_snapshots(
+                    serialized_data=serialized_data,
+                    snapshot_data=snapshot_data_diff,
+                )
             matches = snapshot_data is not None and serialized_data == snapshot_data
             assertion_success = matches
             if not matches and self._update_snapshots:
                 self.extension.write_snapshot(
-                    data=serialized_data, index=self.num_executions
+                    data=serialized_data, index=self.snapshot_id
                 )
                 assertion_success = True
             return assertion_success
@@ -212,7 +232,7 @@ class SnapshotAssertion:
         while self._post_assert_actions:
             self._post_assert_actions.pop()()
 
-    def _recall_data(self, index: int) -> Optional["SerializableData"]:
+    def _recall_data(self, index: "SnapshotId") -> Optional["SerializableData"]:
         try:
             return self.extension.read_snapshot(index=index)
         except SnapshotDoesNotExist:
