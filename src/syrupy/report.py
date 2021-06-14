@@ -1,4 +1,3 @@
-import importlib
 from gettext import (
     gettext,
     ngettext,
@@ -31,6 +30,7 @@ from .terminal import (
     success_style,
     warning_style,
 )
+from .utils import import_module_member
 
 if TYPE_CHECKING:
     import argparse
@@ -124,9 +124,7 @@ class SnapshotReport:
             filepath = Path(package_or_filepath)
             if self.options.pyargs:
                 try:
-                    filepath = Path(
-                        importlib.import_module(package_or_filepath).__file__
-                    )
+                    filepath = import_module_member(package_or_filepath).__file__
                 except Exception:
                     pass
             filepath_abs = str(

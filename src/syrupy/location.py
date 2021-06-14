@@ -1,3 +1,4 @@
+from itertools import takewhile
 from pathlib import Path
 from typing import (
     Iterator,
@@ -8,6 +9,7 @@ import attr
 import pytest
 
 from syrupy.constants import PYTEST_NODE_SEP
+from syrupy.utils import import_module_member
 
 
 @attr.s
@@ -20,11 +22,30 @@ class PyTestLocation:
     filepath: str = attr.ib(init=False)
 
     def __attrs_post_init__(self) -> None:
+        if self.__is_doctest(self._node):
+            return self.__attrs_post_init_doc__()
+        self.__attrs_post_init_def__()
+
+    def __attrs_post_init_def__(self) -> None:
         self.filepath = getattr(self._node, "fspath", None)
         obj = getattr(self._node, "obj", None)
         self.modulename = obj.__module__
         self.methodname = obj.__name__
         self.nodename = getattr(self._node, "name", None)
+        self.testname = self.nodename or self.methodname
+
+    def __attrs_post_init_doc__(self) -> None:
+        doctest = getattr(self._node, "dtest", None)
+        self.filepath = doctest.filename
+        try:
+            module_member = import_module_member(doctest.name)
+            self.modulename = module_member.__module__
+            self.methodname = module_member.__name__
+            self.nodename = module_member.__name__
+        except Exception:
+            self.modulename = ".".join(doctest.name.split(".")[:-1])
+            self.methodname = ""
+            self.nodename = self.__sanitise_docstr(doctest.docstring)
         self.testname = self.nodename or self.methodname
 
     @property
@@ -45,6 +66,19 @@ class PyTestLocation:
         if self.classname is not None:
             return f"{self.classname}.{self.testname}"
         return str(self.testname)
+
+    def __is_doctest(self, node: "pytest.Item") -> bool:
+        return hasattr(node, "dtest")
+
+    def __sanitise_docstr(self, docstr: str) -> str:
+        return PYTEST_NODE_SEP.join(
+            s
+            for s in takewhile(
+                lambda s: not s.startswith(">>>"),
+                (s.strip() for s in docstr.splitlines()),
+            )
+            if s
+        )
 
     def __valid_id(self, name: str) -> str:
         """
